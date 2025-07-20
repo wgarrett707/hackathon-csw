@@ -645,7 +645,6 @@ h1, h2, h3, h4, h5, h6 {
 .mascot-body {
   width: 120px;
   height: 120px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 50%;
   position: relative;
   display: flex;
@@ -1851,11 +1850,17 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .highlighted-text {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: white;
+  background-color: #fef3c7;
+  color: #92400e;
+  font-weight: bold;
   padding: 2px 4px;
   border-radius: 4px;
-  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.dark .highlighted-text {
+  background-color: #fbbf24;
+  color: #78350f;
 }
 
 .close-citation-btn {
@@ -1988,4 +1993,47 @@ h1, h2, h3, h4, h5, h6 {
   .citation-content {
     padding: 20px;
   }
+}
+
+.avatar-color-picker {
+  position: absolute;
+  top: 36px;
+  right: 8px;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 8px 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+  z-index: 3;
+  min-width: unset;
+  min-height: unset;
+  align-items: center;
+}
+
+.avatar-color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid #eee;
+  cursor: pointer;
+  outline: none;
+  transition: border 0.15s, box-shadow 0.15s, transform 0.15s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+  padding: 0;
+  display: inline-block;
+}
+
+.avatar-color-swatch.selected {
+  border: 2.5px solid #333;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.16);
+}
+
+.avatar-color-swatch:focus,
+.avatar-color-swatch:hover {
+  border: 2.5px solid #6366f1;
+  transform: scale(1.08);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.18);
 }

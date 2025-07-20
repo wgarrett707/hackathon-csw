@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Mascot from './Mascot'
 import ChatInterface from './ChatInterface'
 import trainingDocuments from '../assets/training-documents'
+import { Pencil } from 'lucide-react'
 
 interface Message {
   id: number
@@ -19,7 +20,7 @@ interface ChatMessage {
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY
 
 interface ChatAppProps {
-  onShowCitation?: () => void
+  onShowCitation?: (citationIndex?: number, quotedText?: string) => void
   citationOpen?: boolean
 }
 
@@ -35,57 +36,96 @@ function ChatApp({ onShowCitation, citationOpen = false }: ChatAppProps) {
 
   const [isTyping, setIsTyping] = useState(false)
   const [error, setError] = useState<string>('')
+  // Gradient color options for mascot
+  const colorOptions = [
+    {
+      color: '#a78bfa',
+      gradient: 'linear-gradient(135deg, #a78bfa 0%, #6366f1 100%)'
+    },
+    {
+      color: '#f472b6',
+      gradient: 'linear-gradient(135deg, #f472b6 0%, #f9a8d4 100%)'
+    },
+    {
+      color: '#60a5fa',
+      gradient: 'linear-gradient(135deg, #60a5fa 0%, #2563eb 100%)'
+    },
+    {
+      color: '#34d399',
+      gradient: 'linear-gradient(135deg, #34d399 0%, #10b981 100%)'
+    },
+    {
+      color: '#fbbf24',
+      gradient: 'linear-gradient(135deg, #fbbf24 0%, #f59e42 100%)'
+    },
+    {
+      color: '#f87171',
+      gradient: 'linear-gradient(135deg, #f87171 0%, #ef4444 100%)'
+    },
+    {
+      color: '#facc15',
+      gradient: 'linear-gradient(135deg, #facc15 0%, #eab308 100%)'
+    },
+  ]
+
+  const [avatarColor, setAvatarColor] = useState<string>(colorOptions[0].color)
+  const [avatarGradient, setAvatarGradient] = useState<string>(colorOptions[0].gradient)
+  const [showColorPicker, setShowColorPicker] = useState(false)
 
   const callChatGPT = async (userMessage: string): Promise<string> => {
     try {
       const systemPrompt = `
-      You are a professional onboarding guide for InnovateTech Solutions. Your role is to help new employees in their Customer Support position understand their responsibilities and navigate the company effectively.
+      You are a professional onboarding guide for InnovateTech Solutions. Your goal is to help new Customer Support employees by answering their questions **using only the provided internal Markdown documents** [1], [2], [3], etc.
 
-**Your Context:**
-- Role: Customer Support
-- Role Description: Provide customer support and assistance to clients and potential clients.
-- Knowledge Base: You have access to indexed documents [1], [2], [3], etc. that contain company information, policies, and procedures.
+---
 
-**Your Response Style:**
-- Professional, knowledgeable, and proactive
-- Adjust technical depth based on the role requirements
-- Always suggest relevant next steps when appropriate
-- Use in-line citations [1], [2], etc. to reference specific documents
-- Adapt your response format based on the question complexity and type
+Response Requirements:
 
-**Citation Rules:**
-- Use [1], [2], [3] etc. immediately after statements that reference specific information from documents
-- Multiple citations can be used: [1][2] for information found in multiple sources
-- Always cite your sources - every factual claim should have a reference
+1. Use ONLY information found verbatim in the provided documents.  
+2. Your response MUST include exactly ONE citation formatted as: [x]["quoted content"], where:  
+   - [x] is the document number  
+   - "quoted content" is the exact sentence or passage from that document, preserving Markdown formatting such as headings, bold, italics, lists, and inline code whenever possible.  
+3. If multiple relevant passages exist, pick the most complete and relevant one to quote.  
+4. DO NOT summarize or paraphrase document content. Use direct quotes only.  
+5. If no relevant information is found, respond exactly with:  
+   NOT FOUND, PLEASE ESCALATE  
+6. Always end your response with 2-3 actionable next steps or resources that the employee can follow.
 
-**Response Guidelines:**
+---
 
-**For Simple Questions:** Provide direct answers with citations and brief next steps.
-Example: "Your health benefits kick in after 30 days [2]. You can enroll during your first week through the HR portal [1]. Next step: Complete your enrollment by Friday."
+Markdown Quoting:
 
-**For Complex Topics:** Use structured responses with headings, but adapt the structure to what makes sense for the topic.
+- Preserve original Markdown formatting in your quote as much as possible.  
+- If preserving exact formatting is impossible, quoting the full accurate sentence or passage is mandatory.
 
-**For Process Questions:** Focus on step-by-step guidance with relevant citations and practical next steps.
+---
 
-**For Policy Questions:** Provide comprehensive explanations with proper context and citations.
+Unacceptable:
 
-**Critical Rule:** If you cannot find information in your knowledge base to answer a question, respond with exactly: "NOT FOUND, PLEASE ESCALATE"
+- Statements without quotes.  
+- Paraphrasing or partial quotes.  
+- Multiple citations.  
+- Using “NOT FOUND” unless you truly cannot find any answer.
 
-**Proactive Guidance:**
-- Always end responses with 2-3 relevant next steps
-- Suggest related topics they should know about
-- Point them toward additional resources when helpful
-- Anticipate follow-up questions based on their role
+---
 
-**Role-Based Technical Adjustment:**
-- **Leadership roles**: Strategic focus with business context
-- **Technical roles**: Include specific tools, processes, and technical details
-- **Support/Operations**: Emphasize procedures and workflows  
-- **Entry-level**: Provide foundational context and clear explanations
+Example:
 
-Your goal is to be their go-to resource for onboarding questions while reducing manager overhead and helping them ramp up quickly.
+Question: What is the expected response time for customer inquiries?
 
-The documents are attached below:
+Answer:  
+Customer inquiries must be responded to within 24 hours [1]["**Response Time:** All customer inquiries should receive a first response within _24 hours_ of receipt. This ensures we meet our SLA commitments."]
+
+Next steps:  
+1. Review the full SLA policy in Document [1]  
+2. Set calendar reminders to check open tickets  
+3. Ask your team lead how to handle delayed responses
+
+---
+
+Now, answer onboarding questions strictly following this format.
+
+Here are the documents you can use to answer questions:
 
 ${trainingDocuments.map((doc: string, index: number) => `Document ${index + 1}: ${doc}`).join('\n')}  
       `
@@ -109,7 +149,7 @@ ${trainingDocuments.map((doc: string, index: number) => `Document ${index + 1}: 
           model: 'gpt-3.5-turbo',
           messages: chatMessages,
           max_tokens: 300,
-          temperature: 0.7,
+          temperature: 0,
           stream: false
         })
       })
@@ -143,20 +183,24 @@ ${trainingDocuments.map((doc: string, index: number) => `Document ${index + 1}: 
     try {
       let aiResponse: string
 
-      // Check for citation trigger
-      if (message.toLowerCase().includes('give a citation')) {
-        console.log('Citation trigger detected!')
-        // Add extra delay for citation to simulate thinking
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        aiResponse = "According to our Employee Handbook, standard work hours are 9:00 AM to 5:00 PM, Monday through Friday. We also offer flexible scheduling options for team members who need to accommodate personal commitments."
-        onShowCitation?.()
+      // Check if API key is available for ChatGPT
+      if (!OPENAI_API_KEY) {
+        aiResponse = "I'd be happy to help! However, I need an API key to provide detailed responses. For now, try asking me to 'give a citation' to see how I can reference source materials."
       } else {
-        // Check if API key is available for ChatGPT
-        if (!OPENAI_API_KEY) {
-          aiResponse = "I'd be happy to help! However, I need an API key to provide detailed responses. For now, try asking me to 'give a citation' to see how I can reference source materials."
-        } else {
-          // Regular ChatGPT response
-          aiResponse = await callChatGPT(message)
+        // Regular ChatGPT response
+        aiResponse = await callChatGPT(message)
+      }
+
+      // Check if response contains citation patterns [1], [2], [3], etc.
+      const citationPattern = /\[(\d+)\]\s*\["([^"]+)"\]/g
+      const match = citationPattern.exec(aiResponse)
+      if (match) {
+        const citationNum = parseInt(match[1], 10)
+        const quotedText = match[2]
+        if (!isNaN(citationNum)) {
+          // Add extra delay for citation to simulate thinking
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          onShowCitation?.(citationNum - 1, quotedText)
         }
       }
       
@@ -197,8 +241,33 @@ ${trainingDocuments.map((doc: string, index: number) => `Document ${index + 1}: 
       </header>
       
       <main className="app-main">
-        <div className="mascot-container">
-          <Mascot isTyping={isTyping} />
+        <div className="mascot-container" style={{ position: 'relative' }}>
+          <Mascot isTyping={isTyping} color={avatarColor} gradient={avatarGradient} />
+          <button
+            className="avatar-edit-btn"
+            style={{ position: 'absolute', top: 8, right: 8, background: 'none', border: 'none', cursor: 'pointer', zIndex: 2 }}
+            onClick={() => setShowColorPicker((v) => !v)}
+            aria-label="Edit avatar color"
+          >
+            <Pencil size={18} color="#888" />
+          </button>
+          {showColorPicker && (
+            <div className="avatar-color-picker">
+              {colorOptions.map((opt) => (
+                <button
+                  key={opt.color}
+                  className={`avatar-color-swatch${avatarColor === opt.color ? ' selected' : ''}`}
+                  style={{ background: opt.gradient }}
+                  onClick={() => {
+                    setAvatarColor(opt.color)
+                    setAvatarGradient(opt.gradient)
+                    setShowColorPicker(false)
+                  }}
+                  aria-label={`Set avatar color to ${opt.color}`}
+                />
+              ))}
+            </div>
+          )}
         </div>
         
         <ChatInterface 
@@ -214,8 +283,6 @@ ${trainingDocuments.map((doc: string, index: number) => `Document ${index + 1}: 
           {error}
         </div>
       )}
-
-
     </div>
   )
 }
