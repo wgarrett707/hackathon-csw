@@ -137,7 +137,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
         </ReactMarkdown>
         <div>
           {text.includes("NOT FOUND, PLEASE ESCALATE") || text.includes("I couldn't find an answer to your question. Please escalate this issue to your team lead.") ? <div className="escalation-container">
-          <a href="mailto:matt@innovate.cmo" className="escalation-button">📧 Contact Manager</a>
+          <a href="mailto:matt@innovate.com" className="escalation-button">📧 Contact Manager</a>
         </div> : <div></div>}
         </div>
         </div>
