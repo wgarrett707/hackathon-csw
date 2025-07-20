@@ -325,3 +325,4 @@ Effective customer communication builds trust, demonstrates expertise, and ensur
 - **Issue Resolution**: Percentage resolved on first contact
 - **Relationship Quality**: Retention rates and expansion opportunities`
 ];
+export default trainingDocuments
