@@ -18,7 +18,12 @@ interface ChatMessage {
 // Get API key from environment variable
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY
 
-function ChatApp() {
+interface ChatAppProps {
+  onShowCitation?: () => void
+  citationOpen?: boolean
+}
+
+function ChatApp({ onShowCitation, citationOpen = false }: ChatAppProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 1,
@@ -123,11 +128,6 @@ ${trainingDocuments.map((doc: string, index: number) => `Document ${index + 1}: 
   }
 
   const handleSendMessage = async (message: string) => {
-    if (!OPENAI_API_KEY) {
-      setError('Please set your VITE_OPENAI_API_KEY in the .env file')
-      return
-    }
-
     // Add user message
     const userMessage = {
       id: Date.now(),
@@ -141,8 +141,24 @@ ${trainingDocuments.map((doc: string, index: number) => `Document ${index + 1}: 
     setError('')
 
     try {
-      // Call ChatGPT API
-      const aiResponse = await callChatGPT(message)
+      let aiResponse: string
+
+      // Check for citation trigger
+      if (message.toLowerCase().includes('give a citation')) {
+        console.log('Citation trigger detected!')
+        // Add extra delay for citation to simulate thinking
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        aiResponse = "According to our Employee Handbook, standard work hours are 9:00 AM to 5:00 PM, Monday through Friday. We also offer flexible scheduling options for team members who need to accommodate personal commitments."
+        onShowCitation?.()
+      } else {
+        // Check if API key is available for ChatGPT
+        if (!OPENAI_API_KEY) {
+          aiResponse = "I'd be happy to help! However, I need an API key to provide detailed responses. For now, try asking me to 'give a citation' to see how I can reference source materials."
+        } else {
+          // Regular ChatGPT response
+          aiResponse = await callChatGPT(message)
+        }
+      }
       
       const aiMessage = {
         id: Date.now() + 1,
@@ -168,7 +184,7 @@ ${trainingDocuments.map((doc: string, index: number) => `Document ${index + 1}: 
   }
 
   return (
-    <div className="app-container">
+    <div className={`app-container ${citationOpen ? 'citation-open' : ''}`}>
       <header className="app-header">
         <div className="logo">
           <span className="logo-icon">○</span>
@@ -189,7 +205,7 @@ ${trainingDocuments.map((doc: string, index: number) => `Document ${index + 1}: 
           messages={messages}
           onSendMessage={handleSendMessage}
           isTyping={isTyping}
-          disabled={!OPENAI_API_KEY}
+          disabled={false}
         />
       </main>
 
@@ -198,6 +214,8 @@ ${trainingDocuments.map((doc: string, index: number) => `Document ${index + 1}: 
           {error}
         </div>
       )}
+
+
     </div>
   )
 }
