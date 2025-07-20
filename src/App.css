@@ -1339,7 +1339,11 @@ h1, h2, h3, h4, h5, h6 {
   align-items: center;
   padding: 20px 30px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .citation-window-title {
@@ -1418,9 +1422,6 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .close-citation-btn {
-  position: absolute;
-  top: 20px;
-  right: 20px;
   width: 32px;
   height: 32px;
   border: none;

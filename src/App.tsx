@@ -21,10 +21,13 @@ function App() {
     if (showCitationWindow && citationContentRef.current) {
       const highlightedElement = citationContentRef.current.querySelector('.highlighted-text')
       if (highlightedElement) {
-        highlightedElement.scrollIntoView({ 
-          behavior: 'smooth', 
-          block: 'center' 
-        })
+        // Use a small delay to ensure the window is fully rendered
+        setTimeout(() => {
+          highlightedElement.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center'
+          })
+        }, 100)
       }
     }
   }, [showCitationWindow])
@@ -49,6 +52,9 @@ function App() {
                   <div className="status-dot connected"></div>
                   <span>Employee Handbook 2024</span>
                 </div>
+                <button className="close-citation-btn" onClick={handleCloseCitation}>
+                  ✕
+                </button>
               </div>
               
               <main className="citation-window-main">
@@ -232,10 +238,6 @@ function App() {
                   </div>
                 </div>
               </main>
-
-              <button className="close-citation-btn" onClick={handleCloseCitation}>
-                ✕
-              </button>
             </div>
           )}
         </div>

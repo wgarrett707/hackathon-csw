@@ -95,6 +95,8 @@ function ChatApp({ onShowCitation, citationOpen = false }: ChatAppProps) {
       // Check for citation trigger
       if (message.toLowerCase().includes('give a citation')) {
         console.log('Citation trigger detected!')
+        // Add extra delay for citation to simulate thinking
+        await new Promise(resolve => setTimeout(resolve, 1000))
         aiResponse = "According to our Employee Handbook, standard work hours are 9:00 AM to 5:00 PM, Monday through Friday. We also offer flexible scheduling options for team members who need to accommodate personal commitments."
         onShowCitation?.()
       } else {
