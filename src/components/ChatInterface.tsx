@@ -39,9 +39,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
   }
 
   const renderMessageText = (text: string, sender: 'user' | 'ai') => {
+    console.log(`Rendering message from ${sender}:`, text)
     if (sender === 'ai') {
       // Render markdown for AI responses
       return (
+        <div>
         <ReactMarkdown 
           remarkPlugins={[remarkGfm]}
           components={{
@@ -133,6 +135,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
         >
           {text}
         </ReactMarkdown>
+        <div>
+          {text.includes("NOT FOUND, PLEASE ESCALATE") || text.includes("I couldn't find an answer to your question. Please escalate this issue to your team lead.") ? <div className="escalation-container">
+          <a href="mailto:matt@innovate.cmo" className="escalation-button">📧 Contact Manager</a>
+        </div> : <div></div>}
+        </div>
+        </div>
       )
     } else {
       // Plain text for user messages

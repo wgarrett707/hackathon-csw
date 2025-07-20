@@ -28,6 +28,8 @@ const ChatbotResponse: React.FC<ChatbotResponseProps> = ({ messages, isTyping })
   }, [messages])
 
   const renderMessageText = (text: string, sender: 'user' | 'ai') => {
+    console.log(`Rendering message from ${sender}:`, text)
+    console.log("asdfasd")
     if (sender === 'ai') {
       // Render markdown for AI responses
       return (
@@ -122,6 +124,7 @@ const ChatbotResponse: React.FC<ChatbotResponseProps> = ({ messages, isTyping })
           }}
         >
           {text}
+
         </ReactMarkdown>
       )
     } else {

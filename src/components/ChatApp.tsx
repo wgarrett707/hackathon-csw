@@ -87,8 +87,7 @@ Response Requirements:
    - "quoted content" is the exact sentence or passage from that document, preserving Markdown formatting such as headings, bold, italics, lists, and inline code whenever possible.  
 3. If multiple relevant passages exist, pick the most complete and relevant one to quote.  
 4. DO NOT summarize or paraphrase document content. Use direct quotes only.  
-5. If no relevant information is found, respond exactly with:  
-   NOT FOUND, PLEASE ESCALATE  
+5. If no relevant information is found, respond exactly with: "NOT FOUND, PLEASE ESCALATE"
 6. Always end your response with 2-3 actionable next steps or resources that the employee can follow.
 
 ---
@@ -146,9 +145,9 @@ ${trainingDocuments.map((doc: string, index: number) => `Document ${index + 1}: 
           'Authorization': `Bearer ${OPENAI_API_KEY}`
         },
         body: JSON.stringify({
-          model: 'gpt-3.5-turbo',
+          model: 'gpt-4o',
           messages: chatMessages,
-          max_tokens: 300,
+          max_tokens: 600,
           temperature: 0,
           stream: false
         })
@@ -210,6 +209,9 @@ ${trainingDocuments.map((doc: string, index: number) => `Document ${index + 1}: 
         sender: 'ai' as const,
         timestamp: new Date()
       }
+      if (aiResponse === "NOT FOUND, PLEASE ESCALATE") {
+        aiMessage.text = "I couldn't find an answer to your question. Please escalate this issue to your team lead."
+              }
       
       setMessages(prev => [...prev, aiMessage])
     } catch (error) {
