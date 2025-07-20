@@ -5,6 +5,7 @@ import { Upload, File, Trash2, Download, Settings } from 'lucide-react'
 interface Role {
   id: string
   name: string
+  description?: string
 }
 
 interface Document {
@@ -15,6 +16,9 @@ interface Document {
   content: string
   uploadedAt: Date
   roleIds?: string[]  // Support multiple roles per document
+  contentType?: 'file' | 'text' | 'link'  // New content types
+  url?: string  // For link content
+  linkTitle?: string  // For link previews
 }
 
 function AdminDashboard() {
@@ -24,12 +28,21 @@ function AdminDashboard() {
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false)
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false)
   const [newRoleName, setNewRoleName] = useState('')
+  const [newRoleDescription, setNewRoleDescription] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [hoveredDocument, setHoveredDocument] = useState<Document | null>(null)
   const [previewPosition, setPreviewPosition] = useState({ x: 0, y: 0 })
   const [hoverTimeout, setHoverTimeout] = useState<NodeJS.Timeout | null>(null)
+  const [isTextInputMode, setIsTextInputMode] = useState(false)
+  const [isLinkInputMode, setIsLinkInputMode] = useState(false)
+  const [textContent, setTextContent] = useState('')
+  const [textTitle, setTextTitle] = useState('')
+  const [linkUrl, setLinkUrl] = useState('')
+  const [linkTitle, setLinkTitle] = useState('')
+  const [showLinkPreview, setShowLinkPreview] = useState(false)
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Initialize IndexedDB
@@ -165,13 +178,14 @@ function AdminDashboard() {
       try {
         const content = await readFileContent(file)
         const document: Document = {
-          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           name: file.name,
           type: file.type || 'application/octet-stream',
           size: file.size,
           content,
           uploadedAt: new Date(),
-          roleIds: selectedRoleIds.length > 0 ? selectedRoleIds : undefined
+          roleIds: selectedRoleIds.length > 0 ? selectedRoleIds : undefined,
+          contentType: 'file'
         }
         
         saveDocument(document)
@@ -279,7 +293,8 @@ function AdminDashboard() {
         // Add new role
         const role: Role = {
           id: `role-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          name: newRoleName.trim()
+          name: newRoleName.trim(),
+          description: newRoleDescription.trim() || undefined
         }
         
         store.add(role)
@@ -287,6 +302,7 @@ function AdminDashboard() {
         transaction.oncomplete = () => {
           loadRoles()
           setNewRoleName('')
+          setNewRoleDescription('')
         }
       }
     }
@@ -342,12 +358,15 @@ function AdminDashboard() {
     // Set new timeout for hover delay
     const timeout = setTimeout(() => {
       const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+      const scrollY = window.scrollY || 0
+      const scrollX = window.scrollX || 0
+      
       setPreviewPosition({
-        x: rect.right + 10,
-        y: rect.top
+        x: rect.right + scrollX + 15,
+        y: rect.top + scrollY
       })
       setHoveredDocument(doc)
-    }, 500) // 500ms delay
+    }, 300) // Reduced delay to 300ms for better UX
     
     setHoverTimeout(timeout)
   }
@@ -362,17 +381,22 @@ function AdminDashboard() {
   }
   
   const getPreviewContent = (doc: Document) => {
-    // Check if it's a text-based file
-    const isTextFile = doc.type.startsWith('text/') || 
-                      doc.type === 'application/json' ||
-                      doc.name.endsWith('.md') ||
-                      doc.name.endsWith('.txt')
-    
-    if (isTextFile) {
-      // For text files, show first 500 characters
+    if (doc.contentType === 'text') {
       return doc.content.substring(0, 500) + (doc.content.length > 500 ? '...' : '')
+    } else if (doc.contentType === 'link') {
+      return `Link: ${doc.url}\n\nTitle: ${doc.linkTitle || 'No title'}\n\nClick to visit this link.`
     } else {
-      return `Preview not available for ${doc.type} files. File size: ${formatFileSize(doc.size)}`
+      // File content
+      const isTextFile = doc.type.startsWith('text/') || 
+                        doc.type === 'application/json' ||
+                        doc.name.endsWith('.md') ||
+                        doc.name.endsWith('.txt')
+      
+      if (isTextFile) {
+        return doc.content.substring(0, 500) + (doc.content.length > 500 ? '...' : '')
+      } else {
+        return `Preview not available for ${doc.type} files. File size: ${formatFileSize(doc.size)}`
+      }
     }
   }
   
@@ -384,6 +408,111 @@ function AdminDashboard() {
       }
     }
   }, [])
+  
+  // Enhanced Content Input Functions
+  const handleTextSubmit = async () => {
+    if (!textContent.trim() || !textTitle.trim()) return
+    
+    setIsUploading(true)
+    setUploadProgress(50)
+    
+    const document: Document = {
+      id: `text-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: textTitle.trim(),
+      type: 'text/plain',
+      size: textContent.length,
+      content: textContent,
+      uploadedAt: new Date(),
+      roleIds: selectedRoleIds.length > 0 ? selectedRoleIds : undefined,
+      contentType: 'text'
+    }
+    
+    try {
+      saveDocument(document)
+      setUploadProgress(100)
+      setTimeout(() => {
+        setIsUploading(false)
+        setUploadProgress(0)
+        setIsTextInputMode(false)
+        setTextContent('')
+        setTextTitle('')
+      }, 1000)
+    } catch (error) {
+      console.error('Error saving text document:', error)
+      setIsUploading(false)
+    }
+  }
+  
+  const isValidUrl = (string: string): boolean => {
+    try {
+      new URL(string)
+      return true
+    } catch (_) {
+      return false
+    }
+  }
+  
+  const handleLinkSubmit = async () => {
+    if (!linkUrl.trim() || !isValidUrl(linkUrl)) return
+    
+    setIsUploading(true)
+    setUploadProgress(30)
+    
+    // Extract title from URL if not provided
+    const finalTitle = linkTitle.trim() || new URL(linkUrl).hostname
+    
+    const document: Document = {
+      id: `link-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: finalTitle,
+      type: 'text/html',
+      size: linkUrl.length,
+      content: `Link: ${linkUrl}`,
+      uploadedAt: new Date(),
+      roleIds: selectedRoleIds.length > 0 ? selectedRoleIds : undefined,
+      contentType: 'link',
+      url: linkUrl,
+      linkTitle: finalTitle
+    }
+    
+    try {
+      saveDocument(document)
+      setUploadProgress(100)
+      setTimeout(() => {
+        setIsUploading(false)
+        setUploadProgress(0)
+        setIsLinkInputMode(false)
+        setLinkUrl('')
+        setLinkTitle('')
+        setShowLinkPreview(false)
+      }, 1000)
+    } catch (error) {
+      console.error('Error saving link document:', error)
+      setIsUploading(false)
+    }
+  }
+  
+  const handleLinkUrlChange = (url: string) => {
+    setLinkUrl(url)
+    if (isValidUrl(url)) {
+      // Auto-generate title from URL if not set
+      if (!linkTitle) {
+        try {
+          setLinkTitle(new URL(url).hostname)
+        } catch (e) {
+          // Ignore error
+        }
+      }
+      // Show preview after short delay
+      setTimeout(() => {
+        if (isValidUrl(url)) {
+          setIsLoadingPreview(true)
+          setShowLinkPreview(true)
+        }
+      }, 1000)
+    } else {
+      setShowLinkPreview(false)
+    }
+  }
 
   return (
     <div className="app-container">
@@ -407,149 +536,361 @@ function AdminDashboard() {
           <span className="logo-text">OnboardAI Admin</span>
         </div>
         <div className="status">
-          <div className="role-selector">
-            <div className="multi-select-container">
-              <motion.button
-                onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
-                className="role-dropdown-btn"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                {selectedRoleIds.length === 0 
-                  ? 'Select Roles' 
-                  : `${selectedRoleIds.length} Role${selectedRoleIds.length > 1 ? 's' : ''} Selected`
-                }
-                <motion.div
-                  animate={{ rotate: isRoleDropdownOpen ? 180 : 0 }}
-                  transition={{ duration: 0.2 }}
+          <div className="top-bar-left">
+            <div className="role-selector">
+              <div className="multi-select-container">
+                <motion.button
+                  onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
+                  className="role-dropdown-btn"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
                 >
-                  ▼
-                </motion.div>
-              </motion.button>
-              
-              {isRoleDropdownOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="role-dropdown-menu"
-                >
-                  <div className="role-dropdown-header">
-                    <span>Select Roles</span>
-                    {selectedRoleIds.length > 0 && (
-                      <button onClick={clearRoleSelection} className="clear-selection-btn">
-                        Clear All
-                      </button>
-                    )}
-                  </div>
-                  
-                  {roles.map(role => (
-                    <motion.label
-                      key={role.id}
-                      className="role-option"
-                      whileHover={{ backgroundColor: 'rgba(102, 126, 234, 0.1)' }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedRoleIds.includes(role.id)}
-                        onChange={() => toggleRoleSelection(role.id)}
-                      />
-                      <span>{role.name}</span>
-                    </motion.label>
-                  ))}
-                  
-                  {roles.length === 0 && (
-                    <div className="no-roles-message">
-                      No roles available. Create some roles first.
+                  {selectedRoleIds.length === 0 
+                    ? 'Select Roles' 
+                    : `${selectedRoleIds.length} Role${selectedRoleIds.length > 1 ? 's' : ''} Selected`
+                  }
+                  <motion.div
+                    animate={{ rotate: isRoleDropdownOpen ? 180 : 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    ▼
+                  </motion.div>
+                </motion.button>
+                
+                {isRoleDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="role-dropdown-menu"
+                  >
+                    <div className="role-dropdown-header">
+                      <span>Select Roles</span>
+                      {selectedRoleIds.length > 0 && (
+                        <button onClick={clearRoleSelection} className="clear-selection-btn">
+                          Clear All
+                        </button>
+                      )}
                     </div>
-                  )}
-                </motion.div>
-              )}
+                    
+                    {roles.map(role => (
+                      <motion.label
+                        key={role.id}
+                        className="role-option"
+                        whileHover={{ backgroundColor: 'rgba(102, 126, 234, 0.1)' }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedRoleIds.includes(role.id)}
+                          onChange={() => toggleRoleSelection(role.id)}
+                        />
+                        <div className="role-option-content">
+                          <span className="role-name">{role.name}</span>
+                          {role.description && (
+                            <small className="role-desc">{role.description}</small>
+                          )}
+                        </div>
+                      </motion.label>
+                    ))}
+                    
+                    {roles.length === 0 && (
+                      <div className="no-roles-message">
+                        No roles available. Create some roles first.
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </div>
+              
+              <motion.button
+                onClick={() => setIsRoleModalOpen(true)}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="role-manage-btn"
+              >
+                <Settings size={20} />
+              </motion.button>
             </div>
-            
-            <motion.button
-              onClick={() => setIsRoleModalOpen(true)}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="role-manage-btn"
-            >
-              <Settings size={16} />
-            </motion.button>
           </div>
           
-          {/* Selected Roles Chips */}
-          {selectedRoleIds.length > 0 && (
-            <div className="selected-roles-chips">
-              {selectedRoleIds.map(roleId => {
-                const role = roles.find(r => r.id === roleId)
-                return role ? (
-                  <motion.div
-                    key={roleId}
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="role-chip"
-                  >
-                    <span>{role.name}</span>
-                    <button
-                      onClick={() => removeRoleFromSelection(roleId)}
-                      className="remove-role-btn"
+          <div className="top-bar-center">
+            {/* Selected Roles Chips */}
+            {selectedRoleIds.length > 0 && (
+              <div className="selected-roles-chips">
+                {selectedRoleIds.map(roleId => {
+                  const role = roles.find(r => r.id === roleId)
+                  return role ? (
+                    <motion.div
+                      key={roleId}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      className="role-chip"
                     >
-                      ✕
-                    </button>
-                  </motion.div>
-                ) : null
-              })}
-            </div>
-          )}
-          <div className="status-dot connected"></div>
-          <span>Admin Dashboard</span>
+                      <span>{role.name}</span>
+                      <button
+                        onClick={() => removeRoleFromSelection(roleId)}
+                        className="remove-role-btn"
+                      >
+                        ✕
+                      </button>
+                    </motion.div>
+                  ) : null
+                })}
+              </div>
+            )}
+          </div>
+          
+          <div className="top-bar-right">
+            <div className="status-dot connected"></div>
+            <span>Admin Dashboard</span>
+          </div>
         </div>
       </header>
       
       <main className="admin-main">
         <div className="admin-content">
-          {/* Upload Section */}
+          {/* Enhanced Upload Section */}
           <div className="upload-section">
-            <h2>Document Management {selectedRoleIds.length > 0 ? `for ${selectedRoleIds.length} Selected Role${selectedRoleIds.length > 1 ? 's' : ''}` : ''}</h2>
-            <p>Upload onboarding documents to enhance the AI assistant's knowledge{selectedRoleIds.length > 0 ? ` for the selected role${selectedRoleIds.length > 1 ? 's' : ''}` : ' for all roles'}</p>
+            <h2>Content Management {selectedRoleIds.length > 0 ? `for ${selectedRoleIds.length} Selected Role${selectedRoleIds.length > 1 ? 's' : ''}` : ''}</h2>
+            <p>Add files, text content, or links to enhance the AI assistant's knowledge{selectedRoleIds.length > 0 ? ` for the selected role${selectedRoleIds.length > 1 ? 's' : ''}` : ' for all roles'}</p>
             
-            <motion.div 
-              className={`upload-area ${isDragOver ? 'drag-over' : ''}`}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                onChange={handleFileSelect}
-                style={{ display: 'none' }}
-                accept=".pdf,.doc,.docx,.txt,.md,.json,.csv"
-              />
-              
-              <Upload size={48} className="upload-icon" />
-              <h3>Drop files here or click to upload</h3>
-              <p>Supports PDF, DOC, DOCX, TXT, MD, JSON, CSV</p>
-              
-              {isUploading && (
-                <div className="upload-progress">
-                  <div className="progress-bar">
-                    <motion.div 
-                      className="progress-fill"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${uploadProgress}%` }}
-                      transition={{ duration: 0.3 }}
-                    />
+            {/* Content Type Tabs */}
+            <div className="content-tabs">
+              <motion.button
+                className={`tab-btn ${!isTextInputMode && !isLinkInputMode ? 'active' : ''}`}
+                onClick={() => {
+                  setIsTextInputMode(false)
+                  setIsLinkInputMode(false)
+                  setShowLinkPreview(false)
+                }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                📁 Files
+              </motion.button>
+              <motion.button
+                className={`tab-btn ${isTextInputMode ? 'active' : ''}`}
+                onClick={() => {
+                  setIsTextInputMode(true)
+                  setIsLinkInputMode(false)
+                  setShowLinkPreview(false)
+                }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                📝 Text
+              </motion.button>
+              <motion.button
+                className={`tab-btn ${isLinkInputMode ? 'active' : ''}`}
+                onClick={() => {
+                  setIsTextInputMode(false)
+                  setIsLinkInputMode(true)
+                  setShowLinkPreview(false)
+                }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                🔗 Links
+              </motion.button>
+            </div>
+            
+            {/* File Upload Mode */}
+            {!isTextInputMode && !isLinkInputMode && (
+              <motion.div 
+                className={`upload-area ${isDragOver ? 'drag-over' : ''}`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                  accept=".pdf,.doc,.docx,.txt,.md,.json,.csv"
+                />
+                
+                <Upload size={48} className="upload-icon" />
+                <h3>Drop files here or click to upload</h3>
+                <p>Supports PDF, DOC, DOCX, TXT, MD, JSON, CSV</p>
+                
+                {isUploading && (
+                  <div className="upload-progress">
+                    <div className="progress-bar">
+                      <motion.div 
+                        className="progress-fill"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${uploadProgress}%` }}
+                        transition={{ duration: 0.3 }}
+                      />
+                    </div>
+                    <span>{Math.round(uploadProgress)}%</span>
                   </div>
-                  <span>{Math.round(uploadProgress)}%</span>
+                )}
+              </motion.div>
+            )}
+            
+            {/* Text Input Mode */}
+            {isTextInputMode && (
+              <motion.div 
+                className="text-input-area"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="text-form">
+                  <input
+                    type="text"
+                    value={textTitle}
+                    onChange={(e) => setTextTitle(e.target.value)}
+                    placeholder="Document title (e.g., Company Policies)"
+                    className="text-title-input"
+                  />
+                  <textarea
+                    value={textContent}
+                    onChange={(e) => setTextContent(e.target.value)}
+                    placeholder="Enter your text content here...\n\nThis could be company policies, procedures, guidelines, or any other important information for onboarding."
+                    className="text-content-input"
+                    rows={8}
+                  />
+                  <div className="text-form-actions">
+                    <span className="character-count">{textContent.length} characters</span>
+                    <motion.button
+                      onClick={handleTextSubmit}
+                      disabled={!textContent.trim() || !textTitle.trim() || isUploading}
+                      className="submit-text-btn"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      {isUploading ? 'Saving...' : 'Save Text Document'}
+                    </motion.button>
+                  </div>
                 </div>
-              )}
-            </motion.div>
+                
+                {isUploading && (
+                  <div className="upload-progress">
+                    <div className="progress-bar">
+                      <motion.div 
+                        className="progress-fill"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${uploadProgress}%` }}
+                        transition={{ duration: 0.3 }}
+                      />
+                    </div>
+                    <span>{Math.round(uploadProgress)}%</span>
+                  </div>
+                )}
+              </motion.div>
+            )}
+            
+            {/* Link Input Mode */}
+            {isLinkInputMode && (
+              <motion.div 
+                className="link-input-area"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="link-form">
+                  <input
+                    type="url"
+                    value={linkUrl}
+                    onChange={(e) => handleLinkUrlChange(e.target.value)}
+                    placeholder="Paste a URL here (e.g., https://company-handbook.com)"
+                    className="link-url-input"
+                  />
+                  <input
+                    type="text"
+                    value={linkTitle}
+                    onChange={(e) => setLinkTitle(e.target.value)}
+                    placeholder="Link title (auto-generated from URL)"
+                    className="link-title-input"
+                  />
+                  <div className="link-form-actions">
+                    <span className="url-status">
+                      {isValidUrl(linkUrl) ? '✅ Valid URL' : linkUrl ? '❌ Invalid URL' : 'Enter a URL'}
+                    </span>
+                    <motion.button
+                      onClick={handleLinkSubmit}
+                      disabled={!isValidUrl(linkUrl) || isUploading}
+                      className="submit-link-btn"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      {isUploading ? 'Saving...' : 'Save Link'}
+                    </motion.button>
+                  </div>
+                </div>
+                
+                {isUploading && (
+                  <div className="upload-progress">
+                    <div className="progress-bar">
+                      <motion.div 
+                        className="progress-fill"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${uploadProgress}%` }}
+                        transition={{ duration: 0.3 }}
+                      />
+                    </div>
+                    <span>{Math.round(uploadProgress)}%</span>
+                  </div>
+                )}
+              </motion.div>
+            )}
+            
+            {/* Link Preview Iframe */}
+            {showLinkPreview && isValidUrl(linkUrl) && (
+              <motion.div
+                className="link-preview-popup"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.3 }}
+              >
+                <div className="preview-popup-header">
+                  <h4>Link Preview</h4>
+                  <button
+                    onClick={() => setShowLinkPreview(false)}
+                    className="close-preview-btn"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="preview-popup-content">
+                  <div className="preview-url">
+                    <strong>URL:</strong> {linkUrl}
+                  </div>
+                  <div className="iframe-container">
+                    <iframe
+                      src={linkUrl}
+                      title="Link Preview"
+                      className="preview-iframe"
+                      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                      loading="lazy"
+                      onLoad={() => setIsLoadingPreview(false)}
+                      onError={() => setIsLoadingPreview(false)}
+                    />
+                    {isLoadingPreview && (
+                      <div className="iframe-loading">
+                        <div className="loading-spinner"></div>
+                        <p>Loading preview...</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="preview-popup-footer">
+                  <p>This is a preview of the linked content. The link will be saved to your database.</p>
+                </div>
+              </motion.div>
+            )}
           </div>
 
           {/* Documents List */}
@@ -569,11 +910,33 @@ function AdminDashboard() {
                   onMouseLeave={handleDocumentLeave}
                 >
                   <div className="document-info">
-                    <File size={24} className="document-icon" />
+                    {doc.contentType === 'link' ? (
+                      <span className="content-type-icon link-icon">🔗</span>
+                    ) : doc.contentType === 'text' ? (
+                      <span className="content-type-icon text-icon">📝</span>
+                    ) : (
+                      <File size={28} className="document-icon" />
+                    )}
                     <div className="document-details">
                       <h4>{doc.name}</h4>
-                      <p>{formatFileSize(doc.size)} • {doc.type}</p>
-                      <small>Uploaded {doc.uploadedAt.toLocaleDateString()}</small>
+                      <p>
+                        {doc.contentType === 'link' ? (
+                          <span>
+                            <a 
+                              href={doc.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="document-link"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Visit Link
+                            </a> • {doc.type}
+                          </span>
+                        ) : (
+                          <span>{formatFileSize(doc.size)} • {doc.type}</span>
+                        )}
+                      </p>
+                      <small>Added {doc.uploadedAt.toLocaleDateString()}</small>
                       {/* Display all associated roles */}
                       {(() => {
                         const docRoles = doc.roleIds || ((doc as any).roleId ? [(doc as any).roleId] : [])
@@ -627,31 +990,33 @@ function AdminDashboard() {
       </main>
       
       {/* Document Preview Popup */}
-      {hoveredDocument && (
-        <motion.div
-          className="document-preview-popup"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.9 }}
-          transition={{ duration: 0.2 }}
-          style={{
-            left: Math.min(previewPosition.x, window.innerWidth - 320),
-            top: Math.min(previewPosition.y, window.innerHeight - 200)
-          }}
-        >
-          <div className="preview-header">
-            <h4>{hoveredDocument.name}</h4>
-            <span className="preview-type">{hoveredDocument.type}</span>
-          </div>
-          <div className="preview-content">
-            <pre>{getPreviewContent(hoveredDocument)}</pre>
-          </div>
-          <div className="preview-footer">
-            <small>Size: {formatFileSize(hoveredDocument.size)}</small>
-            <small>Uploaded: {hoveredDocument.uploadedAt.toLocaleDateString()}</small>
-          </div>
-        </motion.div>
-      )}
+      <AnimatePresence>
+        {hoveredDocument && (
+          <motion.div
+            className="document-preview-popup"
+            initial={{ opacity: 0, scale: 0.9, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 10 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            style={{
+              left: Math.min(previewPosition.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 340),
+              top: Math.min(previewPosition.y, (typeof window !== 'undefined' ? window.innerHeight : 800) - 220)
+            }}
+          >
+            <div className="preview-header">
+              <h4>{hoveredDocument.name}</h4>
+              <span className="preview-type">{hoveredDocument.type}</span>
+            </div>
+            <div className="preview-content">
+              <pre>{getPreviewContent(hoveredDocument)}</pre>
+            </div>
+            <div className="preview-footer">
+              <small>Size: {formatFileSize(hoveredDocument.size)}</small>
+              <small>Uploaded: {hoveredDocument.uploadedAt.toLocaleDateString()}</small>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       {/* Role Management Modal */}
       {isRoleModalOpen && (
@@ -666,13 +1031,22 @@ function AdminDashboard() {
             <p>Create and manage employee roles for document categorization</p>
             
             <div className="role-form">
-              <input 
-                type="text" 
-                value={newRoleName} 
-                onChange={(e) => setNewRoleName(e.target.value)} 
-                placeholder="Enter new role name"
-                className="role-input"
-              />
+              <div className="role-form-inputs">
+                <input 
+                  type="text" 
+                  value={newRoleName} 
+                  onChange={(e) => setNewRoleName(e.target.value)} 
+                  placeholder="Role name (e.g., Sales Manager)"
+                  className="role-input"
+                />
+                <input 
+                  type="text" 
+                  value={newRoleDescription} 
+                  onChange={(e) => setNewRoleDescription(e.target.value)} 
+                  placeholder="Role description (optional)"
+                  className="role-input role-description-input"
+                />
+              </div>
               <motion.button
                 onClick={createRole}
                 whileHover={{ scale: 1.05 }}
@@ -692,14 +1066,19 @@ function AdminDashboard() {
                 <ul>
                   {roles.map(role => (
                     <li key={role.id} className="role-item">
-                      <span>{role.name}</span>
+                      <div className="role-item-content">
+                        <span className="role-item-name">{role.name}</span>
+                        {role.description && (
+                          <small className="role-item-description">{role.description}</small>
+                        )}
+                      </div>
                       <motion.button
                         onClick={() => deleteRole(role.id)}
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         className="role-delete-btn"
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={18} />
                       </motion.button>
                     </li>
                   ))}
