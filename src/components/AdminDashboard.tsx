@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, File, Trash2, Download, Settings } from 'lucide-react'
+import './AdminDashboard.css' // Import the new CSS file
+
+interface Role {
+  id: string
+  name: string
+}
 
 interface Document {
   id: string
@@ -9,10 +15,15 @@ interface Document {
   size: number
   content: string
   uploadedAt: Date
+  roleId?: string
 }
 
 function AdminDashboard() {
   const [documents, setDocuments] = useState<Document[]>([])
+  const [roles, setRoles] = useState<Role[]>([])
+  const [selectedRoleId, setSelectedRoleId] = useState<string>('')
+  const [isRoleModalOpen, setIsRoleModalOpen] = useState(false)
+  const [newRoleName, setNewRoleName] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -22,10 +33,11 @@ function AdminDashboard() {
   useEffect(() => {
     initializeDB()
     loadDocuments()
+    loadRoles()
   }, [])
 
   const initializeDB = () => {
-    const request = indexedDB.open('OnboardAIDB', 1)
+    const request = indexedDB.open('OnboardAIDB', 2) // Increased version number for schema update
     
     request.onerror = () => {
       console.error('Failed to open database')
@@ -38,21 +50,46 @@ function AdminDashboard() {
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result
       
+      // Create documents store if it doesn't exist
       if (!db.objectStoreNames.contains('documents')) {
         const store = db.createObjectStore('documents', { keyPath: 'id' })
         store.createIndex('uploadedAt', 'uploadedAt', { unique: false })
+        store.createIndex('roleId', 'roleId', { unique: false })
+      } else if (event.oldVersion < 2) {
+        // If upgrading from version 1, add roleId index
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
+        if (transaction) {
+          const store = transaction.objectStore('documents');
+          if (!store.indexNames.contains('roleId')) {
+            store.createIndex('roleId', 'roleId', { unique: false });
+          }
+        }
+      }
+      
+      // Create roles store
+      if (!db.objectStoreNames.contains('roles')) {
+        const store = db.createObjectStore('roles', { keyPath: 'id' })
+        store.createIndex('name', 'name', { unique: true })
       }
     }
   }
 
   const loadDocuments = () => {
-    const request = indexedDB.open('OnboardAIDB', 1)
+    const request = indexedDB.open('OnboardAIDB', 2)
     
     request.onsuccess = () => {
       const db = request.result
       const transaction = db.transaction(['documents'], 'readonly')
       const store = transaction.objectStore('documents')
-      const getAllRequest = store.getAll()
+      
+      // Filter by role if one is selected
+      let getAllRequest;
+      if (selectedRoleId) {
+        const index = store.index('roleId')
+        getAllRequest = index.getAll(selectedRoleId)
+      } else {
+        getAllRequest = store.getAll()
+      }
       
       getAllRequest.onsuccess = () => {
         setDocuments(getAllRequest.result.sort((a, b) => 
@@ -61,9 +98,24 @@ function AdminDashboard() {
       }
     }
   }
+  
+  const loadRoles = () => {
+    const request = indexedDB.open('OnboardAIDB', 2)
+    
+    request.onsuccess = () => {
+      const db = request.result
+      const transaction = db.transaction(['roles'], 'readonly')
+      const store = transaction.objectStore('roles')
+      const getAllRequest = store.getAll()
+      
+      getAllRequest.onsuccess = () => {
+        setRoles(getAllRequest.result)
+      }
+    }
+  }
 
   const saveDocument = (document: Document) => {
-    const request = indexedDB.open('OnboardAIDB', 1)
+    const request = indexedDB.open('OnboardAIDB', 2)
     
     request.onsuccess = () => {
       const db = request.result
@@ -78,7 +130,7 @@ function AdminDashboard() {
   }
 
   const deleteDocument = (id: string) => {
-    const request = indexedDB.open('OnboardAIDB', 1)
+    const request = indexedDB.open('OnboardAIDB', 2)
     
     request.onsuccess = () => {
       const db = request.result
@@ -110,7 +162,8 @@ function AdminDashboard() {
           type: file.type || 'application/octet-stream',
           size: file.size,
           content,
-          uploadedAt: new Date()
+          uploadedAt: new Date(),
+          roleId: selectedRoleId || undefined
         }
         
         saveDocument(document)
@@ -195,6 +248,70 @@ function AdminDashboard() {
     URL.revokeObjectURL(url)
   }
 
+  const createRole = () => {
+    if (!newRoleName.trim()) return
+    
+    const request = indexedDB.open('OnboardAIDB', 2)
+    
+    request.onsuccess = () => {
+      const db = request.result
+      const transaction = db.transaction(['roles'], 'readwrite')
+      const store = transaction.objectStore('roles')
+      
+      // Check if role name already exists
+      const index = store.index('name')
+      const getRequest = index.get(newRoleName.trim())
+      
+      getRequest.onsuccess = () => {
+        if (getRequest.result) {
+          alert('A role with this name already exists')
+          return
+        }
+        
+        // Add new role
+        const role: Role = {
+          id: `role-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          name: newRoleName.trim()
+        }
+        
+        store.add(role)
+        
+        transaction.oncomplete = () => {
+          loadRoles()
+          setNewRoleName('')
+        }
+      }
+    }
+  }
+  
+  const deleteRole = (id: string) => {
+    const request = indexedDB.open('OnboardAIDB', 2)
+    
+    request.onsuccess = () => {
+      const db = request.result
+      const transaction = db.transaction(['roles'], 'readwrite')
+      const store = transaction.objectStore('roles')
+      store.delete(id)
+      
+      transaction.oncomplete = () => {
+        // If the deleted role was selected, reset selection
+        if (selectedRoleId === id) {
+          setSelectedRoleId('')
+        }
+        loadRoles()
+        loadDocuments() // Reload documents to update UI
+      }
+    }
+  }
+  
+  const handleRoleSelect = (roleId: string) => {
+    setSelectedRoleId(roleId)
+  }
+  
+  useEffect(() => {
+    loadDocuments()
+  }, [selectedRoleId])
+
   return (
     <div className="app-container">
       <header className="app-header">
@@ -203,6 +320,26 @@ function AdminDashboard() {
           <span className="logo-text">OnboardAI Admin</span>
         </div>
         <div className="status">
+          <div className="role-selector">
+            <select 
+              value={selectedRoleId} 
+              onChange={(e) => handleRoleSelect(e.target.value)}
+              className="role-dropdown"
+            >
+              <option value="">All Roles</option>
+              {roles.map(role => (
+                <option key={role.id} value={role.id}>{role.name}</option>
+              ))}
+            </select>
+            <motion.button
+              onClick={() => setIsRoleModalOpen(true)}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="role-manage-btn"
+            >
+              <Settings size={16} />
+            </motion.button>
+          </div>
           <div className="status-dot connected"></div>
           <span>Admin Dashboard</span>
         </div>
@@ -212,8 +349,8 @@ function AdminDashboard() {
         <div className="admin-content">
           {/* Upload Section */}
           <div className="upload-section">
-            <h2>Document Management</h2>
-            <p>Upload onboarding documents to enhance the AI assistant's knowledge</p>
+            <h2>Document Management {selectedRoleId ? `for ${roles.find(r => r.id === selectedRoleId)?.name} Role` : ''}</h2>
+            <p>Upload onboarding documents to enhance the AI assistant's knowledge{selectedRoleId ? ' for this specific role' : ''}</p>
             
             <motion.div 
               className={`upload-area ${isDragOver ? 'drag-over' : ''}`}
@@ -255,7 +392,7 @@ function AdminDashboard() {
 
           {/* Documents List */}
           <div className="documents-section">
-            <h3>Uploaded Documents ({documents.length})</h3>
+            <h3>Uploaded Documents ({documents.length}) {selectedRoleId ? `for ${roles.find(r => r.id === selectedRoleId)?.name} Role` : ''}</h3>
             
             <AnimatePresence>
               {documents.map((doc) => (
@@ -273,6 +410,7 @@ function AdminDashboard() {
                       <h4>{doc.name}</h4>
                       <p>{formatFileSize(doc.size)} • {doc.type}</p>
                       <small>Uploaded {doc.uploadedAt.toLocaleDateString()}</small>
+                      {doc.roleId && <small className="document-role">Role: {roles.find(r => r.id === doc.roleId)?.name || 'Unknown'}</small>}
                     </div>
                   </div>
                   
@@ -308,6 +446,74 @@ function AdminDashboard() {
           </div>
         </div>
       </main>
+      
+      {/* Role Management Modal */}
+      {isRoleModalOpen && (
+        <div className="modal-overlay">
+          <motion.div 
+            className="modal-content"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+          >
+            <h2>Role Management</h2>
+            <p>Create and manage employee roles for document categorization</p>
+            
+            <div className="role-form">
+              <input 
+                type="text" 
+                value={newRoleName} 
+                onChange={(e) => setNewRoleName(e.target.value)} 
+                placeholder="Enter new role name"
+                className="role-input"
+              />
+              <motion.button
+                onClick={createRole}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="role-add-btn"
+                disabled={!newRoleName.trim()}
+              >
+                Add Role
+              </motion.button>
+            </div>
+            
+            <div className="role-list">
+              <h3>Existing Roles</h3>
+              {roles.length === 0 ? (
+                <p>No roles created yet</p>
+              ) : (
+                <ul>
+                  {roles.map(role => (
+                    <li key={role.id} className="role-item">
+                      <span>{role.name}</span>
+                      <motion.button
+                        onClick={() => deleteRole(role.id)}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        className="role-delete-btn"
+                      >
+                        <Trash2 size={16} />
+                      </motion.button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            
+            <div className="modal-actions">
+              <motion.button
+                onClick={() => setIsRoleModalOpen(false)}
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="modal-close-btn"
+              >
+                Close
+              </motion.button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   )
 }
