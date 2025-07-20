@@ -3,11 +3,13 @@ import { motion } from 'framer-motion'
 
 interface MascotProps {
   isTyping: boolean
+  color?: string
+  gradient?: string
 }
 
 type MascotState = 'idle' | 'thinking' | 'typing' | 'excited' | 'curious'
 
-const Mascot: React.FC<MascotProps> = ({ isTyping }) => {
+const Mascot: React.FC<MascotProps> = ({ isTyping, color = '#a78bfa', gradient }) => {
   const [isHovered, setIsHovered] = useState(false)
   const [mascotState, setMascotState] = useState<MascotState>('idle')
 
@@ -206,11 +208,8 @@ const Mascot: React.FC<MascotProps> = ({ isTyping }) => {
       {/* Main mascot body */}
       <motion.div 
         className="mascot-body"
-        animate={{
-          backgroundColor: mascotState === 'excited' 
-            ? ['#667eea', '#ff6b6b', '#667eea'] 
-            : ['#667eea', '#764ba2']
-        }}
+        style={{ background: gradient ? gradient : color }}
+        animate={{}}
         transition={{
           duration: mascotState === 'excited' ? 0.5 : 0.3,
           repeat: mascotState === 'excited' ? 3 : 0,

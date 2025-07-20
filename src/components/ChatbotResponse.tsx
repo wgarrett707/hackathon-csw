@@ -33,7 +33,6 @@ const ChatbotResponse: React.FC<ChatbotResponseProps> = ({ messages, isTyping })
       return (
         <ReactMarkdown 
           remarkPlugins={[remarkGfm]}
-          className="markdown-content"
           components={{
             // Custom styling for markdown elements
             h1: ({ children }) => (
@@ -195,7 +194,7 @@ const ChatbotResponse: React.FC<ChatbotResponseProps> = ({ messages, isTyping })
       
       <div ref={messagesEndRef} />
       
-      <style jsx>{`
+      <style>{`
         .message {
           display: flex;
           align-items: flex-start;

@@ -258,12 +258,12 @@ function AdminDashboard() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  const downloadDocument = (document: Document) => {
-    const blob = new Blob([document.content], { type: document.type })
+  const downloadDocument = (doc: Document) => {
+    const blob = new Blob([doc.content], { type: doc.type })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = document.name
+    a.download = doc.name
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
