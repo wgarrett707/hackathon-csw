@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, File, Trash2, Download, Settings } from 'lucide-react'
-import './AdminDashboard.css' // Import the new CSS file
 
 interface Role {
   id: string
@@ -15,18 +14,22 @@ interface Document {
   size: number
   content: string
   uploadedAt: Date
-  roleId?: string
+  roleIds?: string[]  // Support multiple roles per document
 }
 
 function AdminDashboard() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [roles, setRoles] = useState<Role[]>([])
-  const [selectedRoleId, setSelectedRoleId] = useState<string>('')
+  const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([])
+  const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false)
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false)
   const [newRoleName, setNewRoleName] = useState('')
   const [isDragOver, setIsDragOver] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [hoveredDocument, setHoveredDocument] = useState<Document | null>(null)
+  const [previewPosition, setPreviewPosition] = useState({ x: 0, y: 0 })
+  const [hoverTimeout, setHoverTimeout] = useState<NodeJS.Timeout | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Initialize IndexedDB
@@ -82,17 +85,22 @@ function AdminDashboard() {
       const transaction = db.transaction(['documents'], 'readonly')
       const store = transaction.objectStore('documents')
       
-      // Filter by role if one is selected
-      let getAllRequest;
-      if (selectedRoleId) {
-        const index = store.index('roleId')
-        getAllRequest = index.getAll(selectedRoleId)
-      } else {
-        getAllRequest = store.getAll()
-      }
+      // Get all documents and filter client-side for multi-role support
+      const getAllRequest = store.getAll()
       
       getAllRequest.onsuccess = () => {
-        setDocuments(getAllRequest.result.sort((a, b) => 
+        let filteredDocuments = getAllRequest.result
+        
+        // Filter by selected roles if any are selected
+        if (selectedRoleIds.length > 0) {
+          filteredDocuments = filteredDocuments.filter(doc => {
+            // Support both old single roleId and new multiple roleIds format
+            const docRoles = doc.roleIds || ((doc as any).roleId ? [(doc as any).roleId] : [])
+            return docRoles.some((roleId: string) => selectedRoleIds.includes(roleId))
+          })
+        }
+        
+        setDocuments(filteredDocuments.sort((a, b) => 
           new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime()
         ))
       }
@@ -163,7 +171,7 @@ function AdminDashboard() {
           size: file.size,
           content,
           uploadedAt: new Date(),
-          roleId: selectedRoleId || undefined
+          roleIds: selectedRoleIds.length > 0 ? selectedRoleIds : undefined
         }
         
         saveDocument(document)
@@ -294,43 +302,171 @@ function AdminDashboard() {
       store.delete(id)
       
       transaction.oncomplete = () => {
-        // If the deleted role was selected, reset selection
-        if (selectedRoleId === id) {
-          setSelectedRoleId('')
-        }
+        // Remove deleted role from selection if it was selected
+        setSelectedRoleIds(prev => prev.filter(roleId => roleId !== id))
         loadRoles()
         loadDocuments() // Reload documents to update UI
       }
     }
   }
   
-  const handleRoleSelect = (roleId: string) => {
-    setSelectedRoleId(roleId)
+  const toggleRoleSelection = (roleId: string) => {
+    setSelectedRoleIds(prev => {
+      if (prev.includes(roleId)) {
+        return prev.filter(id => id !== roleId)
+      } else {
+        return [...prev, roleId]
+      }
+    })
+  }
+  
+  const clearRoleSelection = () => {
+    setSelectedRoleIds([])
+  }
+  
+  const removeRoleFromSelection = (roleId: string) => {
+    setSelectedRoleIds(prev => prev.filter(id => id !== roleId))
   }
   
   useEffect(() => {
     loadDocuments()
-  }, [selectedRoleId])
+  }, [selectedRoleIds])
+  
+  // Document Preview Functions
+  const handleDocumentHover = (doc: Document, event: React.MouseEvent) => {
+    // Clear any existing timeout
+    if (hoverTimeout) {
+      clearTimeout(hoverTimeout)
+    }
+    
+    // Set new timeout for hover delay
+    const timeout = setTimeout(() => {
+      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+      setPreviewPosition({
+        x: rect.right + 10,
+        y: rect.top
+      })
+      setHoveredDocument(doc)
+    }, 500) // 500ms delay
+    
+    setHoverTimeout(timeout)
+  }
+  
+  const handleDocumentLeave = () => {
+    // Clear timeout on leave
+    if (hoverTimeout) {
+      clearTimeout(hoverTimeout)
+      setHoverTimeout(null)
+    }
+    setHoveredDocument(null)
+  }
+  
+  const getPreviewContent = (doc: Document) => {
+    // Check if it's a text-based file
+    const isTextFile = doc.type.startsWith('text/') || 
+                      doc.type === 'application/json' ||
+                      doc.name.endsWith('.md') ||
+                      doc.name.endsWith('.txt')
+    
+    if (isTextFile) {
+      // For text files, show first 500 characters
+      return doc.content.substring(0, 500) + (doc.content.length > 500 ? '...' : '')
+    } else {
+      return `Preview not available for ${doc.type} files. File size: ${formatFileSize(doc.size)}`
+    }
+  }
+  
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeout) {
+        clearTimeout(hoverTimeout)
+      }
+    }
+  }, [])
 
   return (
     <div className="app-container">
       <header className="app-header">
         <div className="logo">
-          <span className="logo-icon">⚙️</span>
+          <div className="company-logo-container">
+            <img 
+              src="/logo.svg" 
+              alt="Company Logo" 
+              className="company-logo"
+              onError={(e) => {
+                // Fallback to a styled placeholder if logo doesn't exist
+                (e.target as HTMLImageElement).style.display = 'none';
+                (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+              }}
+            />
+            <div className="logo-fallback hidden">
+              <span className="fallback-icon">🏢</span>
+            </div>
+          </div>
           <span className="logo-text">OnboardAI Admin</span>
         </div>
         <div className="status">
           <div className="role-selector">
-            <select 
-              value={selectedRoleId} 
-              onChange={(e) => handleRoleSelect(e.target.value)}
-              className="role-dropdown"
-            >
-              <option value="">All Roles</option>
-              {roles.map(role => (
-                <option key={role.id} value={role.id}>{role.name}</option>
-              ))}
-            </select>
+            <div className="multi-select-container">
+              <motion.button
+                onClick={() => setIsRoleDropdownOpen(!isRoleDropdownOpen)}
+                className="role-dropdown-btn"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {selectedRoleIds.length === 0 
+                  ? 'Select Roles' 
+                  : `${selectedRoleIds.length} Role${selectedRoleIds.length > 1 ? 's' : ''} Selected`
+                }
+                <motion.div
+                  animate={{ rotate: isRoleDropdownOpen ? 180 : 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  ▼
+                </motion.div>
+              </motion.button>
+              
+              {isRoleDropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="role-dropdown-menu"
+                >
+                  <div className="role-dropdown-header">
+                    <span>Select Roles</span>
+                    {selectedRoleIds.length > 0 && (
+                      <button onClick={clearRoleSelection} className="clear-selection-btn">
+                        Clear All
+                      </button>
+                    )}
+                  </div>
+                  
+                  {roles.map(role => (
+                    <motion.label
+                      key={role.id}
+                      className="role-option"
+                      whileHover={{ backgroundColor: 'rgba(102, 126, 234, 0.1)' }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedRoleIds.includes(role.id)}
+                        onChange={() => toggleRoleSelection(role.id)}
+                      />
+                      <span>{role.name}</span>
+                    </motion.label>
+                  ))}
+                  
+                  {roles.length === 0 && (
+                    <div className="no-roles-message">
+                      No roles available. Create some roles first.
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </div>
+            
             <motion.button
               onClick={() => setIsRoleModalOpen(true)}
               whileHover={{ scale: 1.05 }}
@@ -340,6 +476,32 @@ function AdminDashboard() {
               <Settings size={16} />
             </motion.button>
           </div>
+          
+          {/* Selected Roles Chips */}
+          {selectedRoleIds.length > 0 && (
+            <div className="selected-roles-chips">
+              {selectedRoleIds.map(roleId => {
+                const role = roles.find(r => r.id === roleId)
+                return role ? (
+                  <motion.div
+                    key={roleId}
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    className="role-chip"
+                  >
+                    <span>{role.name}</span>
+                    <button
+                      onClick={() => removeRoleFromSelection(roleId)}
+                      className="remove-role-btn"
+                    >
+                      ✕
+                    </button>
+                  </motion.div>
+                ) : null
+              })}
+            </div>
+          )}
           <div className="status-dot connected"></div>
           <span>Admin Dashboard</span>
         </div>
@@ -349,8 +511,8 @@ function AdminDashboard() {
         <div className="admin-content">
           {/* Upload Section */}
           <div className="upload-section">
-            <h2>Document Management {selectedRoleId ? `for ${roles.find(r => r.id === selectedRoleId)?.name} Role` : ''}</h2>
-            <p>Upload onboarding documents to enhance the AI assistant's knowledge{selectedRoleId ? ' for this specific role' : ''}</p>
+            <h2>Document Management {selectedRoleIds.length > 0 ? `for ${selectedRoleIds.length} Selected Role${selectedRoleIds.length > 1 ? 's' : ''}` : ''}</h2>
+            <p>Upload onboarding documents to enhance the AI assistant's knowledge{selectedRoleIds.length > 0 ? ` for the selected role${selectedRoleIds.length > 1 ? 's' : ''}` : ' for all roles'}</p>
             
             <motion.div 
               className={`upload-area ${isDragOver ? 'drag-over' : ''}`}
@@ -392,7 +554,7 @@ function AdminDashboard() {
 
           {/* Documents List */}
           <div className="documents-section">
-            <h3>Uploaded Documents ({documents.length}) {selectedRoleId ? `for ${roles.find(r => r.id === selectedRoleId)?.name} Role` : ''}</h3>
+            <h3>Uploaded Documents ({documents.length}) {selectedRoleIds.length > 0 ? `for ${selectedRoleIds.length} Selected Role${selectedRoleIds.length > 1 ? 's' : ''}` : ''}</h3>
             
             <AnimatePresence>
               {documents.map((doc) => (
@@ -403,6 +565,8 @@ function AdminDashboard() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ duration: 0.3 }}
+                  onMouseEnter={(e) => handleDocumentHover(doc, e)}
+                  onMouseLeave={handleDocumentLeave}
                 >
                   <div className="document-info">
                     <File size={24} className="document-icon" />
@@ -410,7 +574,22 @@ function AdminDashboard() {
                       <h4>{doc.name}</h4>
                       <p>{formatFileSize(doc.size)} • {doc.type}</p>
                       <small>Uploaded {doc.uploadedAt.toLocaleDateString()}</small>
-                      {doc.roleId && <small className="document-role">Role: {roles.find(r => r.id === doc.roleId)?.name || 'Unknown'}</small>}
+                      {/* Display all associated roles */}
+                      {(() => {
+                        const docRoles = doc.roleIds || ((doc as any).roleId ? [(doc as any).roleId] : [])
+                        return docRoles.length > 0 && (
+                          <div className="document-roles">
+                            {docRoles.map((roleId: string) => {
+                              const role = roles.find(r => r.id === roleId)
+                              return role ? (
+                                <small key={roleId} className="document-role">
+                                  {role.name}
+                                </small>
+                              ) : null
+                            })}
+                          </div>
+                        )
+                      })()}
                     </div>
                   </div>
                   
@@ -446,6 +625,33 @@ function AdminDashboard() {
           </div>
         </div>
       </main>
+      
+      {/* Document Preview Popup */}
+      {hoveredDocument && (
+        <motion.div
+          className="document-preview-popup"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.9 }}
+          transition={{ duration: 0.2 }}
+          style={{
+            left: Math.min(previewPosition.x, window.innerWidth - 320),
+            top: Math.min(previewPosition.y, window.innerHeight - 200)
+          }}
+        >
+          <div className="preview-header">
+            <h4>{hoveredDocument.name}</h4>
+            <span className="preview-type">{hoveredDocument.type}</span>
+          </div>
+          <div className="preview-content">
+            <pre>{getPreviewContent(hoveredDocument)}</pre>
+          </div>
+          <div className="preview-footer">
+            <small>Size: {formatFileSize(hoveredDocument.size)}</small>
+            <small>Uploaded: {hoveredDocument.uploadedAt.toLocaleDateString()}</small>
+          </div>
+        </motion.div>
+      )}
       
       {/* Role Management Modal */}
       {isRoleModalOpen && (
